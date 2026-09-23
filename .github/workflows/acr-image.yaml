@@ -57,11 +57,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # The frontend build needs more heap than Node's ~4GB default; as of 0.11.4 it
+      # OOMs without this ("Ineffective mark-compacts near heap limit"). Upstream keeps
+      # ENV NODE_OPTIONS commented out in the Dockerfile and injects it from CI instead
+      # (see their .github/workflows/docker.yaml), so we mirror that rather than editing
+      # the Dockerfile, which would conflict on every upstream merge. Note that the
+      # --max-old-space-size in hatch_build.py does NOT apply here: that hook only runs
+      # for the hatch/PyPI build, never for the Docker build.
+      - name: Prepare CI Dockerfile
+        run: |
+          set -euo pipefail
+          awk '
+            /^FROM --platform=\$BUILDPLATFORM node:/ {
+              print
+              print "ENV NODE_OPTIONS=\"--max-old-space-size=12288\""
+              next
+            }
+            { print }
+          ' Dockerfile > "${RUNNER_TEMP}/Dockerfile"
+          # Fail loudly if the FROM line ever changes shape upstream, rather than
+          # silently building without the heap bump and OOMing minutes later.
+          grep -q 'ENV NODE_OPTIONS=' "${RUNNER_TEMP}/Dockerfile" \
+            || { echo "::error::NODE_OPTIONS was not injected; the node FROM line in Dockerfile must have changed."; exit 1; }
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          file: ${{ runner.temp }}/Dockerfile
           platforms: linux/amd64
           push: true
           provenance: false
