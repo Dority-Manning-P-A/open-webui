@@ -77,7 +77,10 @@ jobs:
           ' Dockerfile > "${RUNNER_TEMP}/Dockerfile"
           # Fail loudly if the FROM line ever changes shape upstream, rather than
           # silently building without the heap bump and OOMing minutes later.
-          grep -q 'ENV NODE_OPTIONS=' "${RUNNER_TEMP}/Dockerfile" \
+          # Match the exact injected line (-x whole line, -F fixed string): a looser
+          # pattern also matches the Dockerfile's own commented-out
+          # "# ENV NODE_OPTIONS=..." line and would pass with nothing injected.
+          grep -qxF 'ENV NODE_OPTIONS="--max-old-space-size=12288"' "${RUNNER_TEMP}/Dockerfile" \
             || { echo "::error::NODE_OPTIONS was not injected; the node FROM line in Dockerfile must have changed."; exit 1; }
 
       - name: Build and push
